@@ -34,4 +34,9 @@ final ThemeData appTheme = ThemeData(
       textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
     ),
   ),
+    navigationBarTheme: const NavigationBarThemeData(
+    backgroundColor: Colors.white,
+    surfaceTintColor: Colors.white,
+    indicatorColor: Color(0xFFF0F0F0),
+  ),
 );
