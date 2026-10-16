@@ -1,7 +1,10 @@
+import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import '../models/product.dart';
+import '../services/cloudinary_service.dart';
 
 class AddProductScreen extends StatefulWidget {
   const AddProductScreen({super.key});
@@ -15,25 +18,51 @@ class _AddProductScreenState extends State<AddProductScreen> {
   final _title = TextEditingController();
   final _price = TextEditingController();
   final _desc = TextEditingController();
-  final _image = TextEditingController();
+  File? _image;
   bool _loading = false;
+
+  Future<void> _pickImage() async {
+    final picked = await ImagePicker().pickImage(
+      source: ImageSource.gallery,
+      maxWidth: 1080,
+      imageQuality: 80,
+    );
+    if (picked != null) setState(() => _image = File(picked.path));
+  }
 
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _loading = true);
 
-    final user = FirebaseAuth.instance.currentUser!;
-    final product = Product(
-      title: _title.text.trim(),
-      description: _desc.text.trim(),
-      imageUrl: _image.text.trim(),
-      price: double.parse(_price.text.trim()),
-      sellerId: user.uid,
-      sellerName: user.displayName ?? user.email ?? 'Seller',
-    );
+    try {
+      String imageUrl = '';
+      if (_image != null) {
+        imageUrl = await CloudinaryService.uploadImage(_image!);
+      }
 
-    await FirebaseFirestore.instance.collection('products').add(product.toMap());
-    if (mounted) Navigator.pop(context);
+      final user = FirebaseAuth.instance.currentUser!;
+      final product = Product(
+        title: _title.text.trim(),
+        description: _desc.text.trim(),
+        imageUrl: imageUrl,
+        price: double.parse(_price.text.trim()),
+        sellerId: user.uid,
+        sellerName: (user.displayName?.isNotEmpty ?? false)
+            ? user.displayName!
+            : (user.email ?? 'Seller'),
+      );
+
+      await FirebaseFirestore.instance
+          .collection('products')
+          .add(product.toMap());
+      if (mounted) Navigator.pop(context);
+    } catch (e) {
+      if (mounted) {
+        setState(() => _loading = false);
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Error: $e')));
+      }
+    }
   }
 
   @override
@@ -41,7 +70,6 @@ class _AddProductScreenState extends State<AddProductScreen> {
     _title.dispose();
     _price.dispose();
     _desc.dispose();
-    _image.dispose();
     super.dispose();
   }
 
@@ -58,6 +86,31 @@ class _AddProductScreenState extends State<AddProductScreen> {
           key: _formKey,
           child: Column(
             children: [
+              GestureDetector(
+                onTap: _loading ? null : _pickImage,
+                child: Container(
+                  height: 200,
+                  width: double.infinity,
+                  clipBehavior: Clip.antiAlias,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF5F5F7),
+                    borderRadius: BorderRadius.circular(18),
+                  ),
+                  child: _image == null
+                      ? const Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.add_photo_alternate_outlined,
+                                size: 44, color: Colors.grey),
+                            SizedBox(height: 8),
+                            Text('Photo chuno',
+                                style: TextStyle(color: Colors.grey)),
+                          ],
+                        )
+                      : Image.file(_image!, fit: BoxFit.cover),
+                ),
+              ),
+              const SizedBox(height: 16),
               TextFormField(
                 controller: _title,
                 validator: _required,
@@ -77,12 +130,6 @@ class _AddProductScreenState extends State<AddProductScreen> {
                 maxLines: 3,
                 decoration: const InputDecoration(hintText: 'Description'),
               ),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: _image,
-                decoration:
-                    const InputDecoration(hintText: 'Image URL (optional)'),
-              ),
               const SizedBox(height: 24),
               ElevatedButton(
                 onPressed: _loading ? null : _save,
@@ -91,9 +138,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
                         height: 22,
                         width: 22,
                         child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.white,
-                        ),
+                            strokeWidth: 2, color: Colors.white),
                       )
                     : const Text('Publish'),
               ),
